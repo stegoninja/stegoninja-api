@@ -37,11 +37,11 @@ RUN git clone https://github.com/etr/libhttpserver.git && \
 # Compile application
 WORKDIR /app
 COPY webserver.cpp .
-RUN mkdir include
+RUN mkdir include-web
 RUN mkdir web
-COPY include/ include/
+COPY include-web/ include-web/
 COPY web/ web/
-RUN g++ -std=c++17 -Iinclude -o stegoninja webserver.cpp web/* -lhttpserver -lpthread -lssl -lcrypto -lmicrohttpd -lgnutls -luuid
+RUN g++ -std=c++17 -Iinclude-web -o stegoninja webserver.cpp web/* -lhttpserver -lpthread -lssl -lcrypto -lmicrohttpd -lgnutls -luuid
 
 # Final stage
 FROM ubuntu:focal

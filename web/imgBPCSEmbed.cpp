@@ -136,9 +136,11 @@ std::tuple<std::string, int> imgBPCSEmbed(const std::string& fileId, const std::
         std::vector<uint8_t> dataToEmbed;
 
         // Add filename
-        uint32_t filenameLength = secretFilename.size();
-        dataToEmbed.insert(dataToEmbed.end(), reinterpret_cast<uint8_t*>(&filenameLength), 
-                        reinterpret_cast<uint8_t*>(&filenameLength) + 4);
+        if (secretFilename.size() > 255) {
+            throw std::runtime_error("Filename exceeds maximum length of 255 characters");
+        }
+        uint8_t filenameLength = static_cast<uint8_t>(secretFilename.size());
+        dataToEmbed.push_back(filenameLength); // Store as single byte
         dataToEmbed.insert(dataToEmbed.end(), secretFilename.begin(), secretFilename.end());
 
         // Add secret data length and data
