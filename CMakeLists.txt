@@ -12,14 +12,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories(include)
 
 # Define the source files
-set(SOURCES
+set(SOURCES_IMG
     src/main.cpp
     src/stegano.cpp
     src/vigenere.cpp
 )
 
-set (ANOTHER
-src/video.cpp)
+set (SOURCES_VID
+    src/video.cpp
+)
 
 # Find ncurses library
 find_package(Curses REQUIRED)
@@ -33,9 +34,9 @@ include_directories(
 )
 
 # Define the executable
-add_executable(SteganoImgLsb ${SOURCES})
+add_executable(SteganoImgLsb ${SOURCES_IMG})
 
-add_executable(SteganoVid ${ANOTHER})
+add_executable(SteganoVid ${SOURCES_VID})
 
 # Link libraries
 target_link_libraries(SteganoImgLsb

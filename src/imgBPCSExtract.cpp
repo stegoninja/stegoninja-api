@@ -200,26 +200,34 @@ int main(int argc, char* argv[]) {
     }
 
     // Read filename length
-    uint32_t filenameLength = *reinterpret_cast<uint32_t*>(encryptedData.data());
-    if (filenameLength > 255 || filenameLength == 0) {
+    uint8_t filenameLength = encryptedData[0]; // Read single byte
+    if (filenameLength == 0) {
         throw std::runtime_error("Invalid filename length");
     }
 
-    // Check data length
-    if (encryptedData.size() < 4 + filenameLength + 4) {
+    // Verify total data length
+    size_t headerSize = 1 + filenameLength + 4; // 1 byte length + filename + 4 bytes secret length
+    if (encryptedData.size() < headerSize) {
         throw std::runtime_error("Data truncated");
     }
 
-    std::string filename(encryptedData.begin() + 4, encryptedData.begin() + 4 + filenameLength);
-    uint32_t secretLength = *reinterpret_cast<uint32_t*>(encryptedData.data() + 4 + filenameLength);
+    // Extract filename
+    std::string filename(encryptedData.begin() + 1, 
+                        encryptedData.begin() + 1 + filenameLength);
 
-    if (encryptedData.size() < 4 + filenameLength + 4 + secretLength) {
+    // Read secret data length
+    uint32_t secretLength = *reinterpret_cast<const uint32_t*>(&encryptedData[1 + filenameLength]);
+
+    // Verify secret data presence
+    size_t totalSize = headerSize + secretLength;
+    if (encryptedData.size() < totalSize) {
         throw std::runtime_error("Data truncated");
     }
 
+    // Extract secret data
     std::vector<uint8_t> secretData(
-        encryptedData.begin() + 4 + filenameLength + 4,
-        encryptedData.begin() + 4 + filenameLength + 4 + secretLength
+        encryptedData.begin() + headerSize,
+        encryptedData.begin() + totalSize
     );
 
     // Create output directory if needed
