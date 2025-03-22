@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stegoninja</title>
+</head>
+<body>
+    <h1>Stegoninja - Image, Video, Audio Steganography Web-server</h1>
+    <h2>Image Steganography</h2>
+    <h3>BPCS (Bit-Plane Complexity Segmentation)</h3>
+    <h4>Embed</h4>
+    <form action="/image/bpcs/embed" method="post" enctype="multipart/form-data">
+        <label for="cover">Cover File:</label><br>
+        <input type="file" id="cover" name="cover"><br>
+        <label for="secret">Secret File:</label><br>
+        <input type="file" id="secret" name="secret"><br>
+        <label for="encrypt">Encrypt: </label>
+        <input type="checkbox" id="encrypt" name="encrypt" value="true"><br>
+        <label for="randomize">Randomize: </label>
+        <input type="checkbox" id="randomize" name="randomize" value="true"><br>
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password"><br>
+        <input type="submit" value="Embed">
+    </form>
+    <h4>Extract</h4>
+    <form action="/image/bpcs/extract" method="post" enctype="multipart/form-data">
+        <label for="stego">Stego File:</label><br>
+        <input type="file" id="stego" name="stego"><br>
+        <label for="encrypt">Encrypt: </label>
+        <input type="checkbox" id="encrypt" name="encrypt" value="true"><br>
+        <label for="randomize">Randomize: </label>
+        <input type="checkbox" id="randomize" name="randomize" value="true"><br>
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password"><br>
+        <input type="submit" value="Upload">
+    </form>
+</body>
+</html>
