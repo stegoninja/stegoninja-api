@@ -92,16 +92,20 @@ static bool saveNamedFile(const std::string &body, const std::string &boundary,
     return true;
 }
 
-class IndexFileHandler : public http_resource {
+// API-only service info / health endpoint (no HTML UI is served).
+class RootHandler : public http_resource {
 public:
     std::shared_ptr<http_response> render_GET(const http_request&) override {
-        std::ifstream file("index.html", std::ios::in | std::ios::binary);
-        if (!file.is_open()) {
-            return std::make_shared<string_response>("File not found", 404, "text/plain");
-        }
-        
-        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        return std::make_shared<string_response>(content, 200, "text/html; charset=UTF-8");
+        const std::string body =
+            "{\"status\":\"ok\",\"service\":\"stegoninja-api\","
+            "\"endpoints\":["
+            "\"POST /image/bpcs/embed\",\"POST /image/bpcs/extract\","
+            "\"POST /image/lsb/embed\",\"POST /image/lsb/extract\","
+            "\"POST /audio/lsb/embed\",\"POST /audio/lsb/extract\","
+            "\"POST /video/lsb/embed\",\"POST /video/lsb/extract\","
+            "\"GET /results/{fileId}\",\"GET /extracts/{fileId}\""
+            "],\"spec\":\"openapi.yaml\"}";
+        return jsonResp(body, 200);
     }
 };
 
@@ -399,7 +403,7 @@ int main() {
         .max_threads(5)
         .content_size_limit(1024 * 1024 * 256);
 
-    IndexFileHandler index;
+    RootHandler index;
     ImageBPCSEmbedHandler imgBPCSEm;
     ImageBPCSExtractHandler imgBPCSEx;
     ImageLSBEmbedHandler imgLSBEm;

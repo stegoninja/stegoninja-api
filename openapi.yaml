@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: StegoNinja API
+  description: |
+    HTTP API for hiding (embedding) and recovering (extracting) a secret file
+    inside a cover image, audio, or video file using steganography.
+
+    Techniques:
+      * **Image BPCS** — Bit-Plane Complexity Segmentation (24-bit BMP cover).
+      * **Image LSB** — Least Significant Bit over a 24-bit BMP (any image is
+        converted to BMP first). Output is a lossless BMP.
+      * **Audio LSB** — LSB over the PCM samples of a WAV file. Output is a WAV.
+      * **Video LSB** — LSB over video frame pixels. Output is a lossless
+        FFV1/AVI file (re-upload that AVI to extract).
+
+    Workflow: `POST` an embed endpoint, read `data.result` from the JSON
+    response, download the stego file from that path (`/results/{fileId}`), then
+    later `POST` it to the matching extract endpoint and download the recovered
+    secret from `/extracts/{fileId}`.
+
+    Options common to every operation:
+      * `password` — key material for encryption and/or randomization.
+      * `encrypt`  — `"true"` to Vigenère-encrypt the payload with `password`.
+      * `randomize`— `"true"` to permute carrier positions with a
+        password-seeded PRNG.
+
+    Embed and extract must be called with the **same** `encrypt`, `randomize`
+    and `password` values.
+
+    Note: the older BPCS endpoints have historically quirky option handling and
+    write extracts differently from the LSB endpoints; the LSB endpoints
+    (image/audio/video) implement the option contract described above.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local container (host port may be remapped, e.g. 8099)
+
+tags:
+  - name: meta
+  - name: image
+  - name: audio
+  - name: video
+  - name: download
+
+paths:
+  /:
+    get:
+      tags: [meta]
+      summary: Service info / health
+      description: Returns service status and the list of available endpoints.
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  service: { type: string, example: stegoninja-api }
+                  endpoints:
+                    type: array
+                    items: { type: string }
+                  spec: { type: string, example: openapi.yaml }
+
+  /image/bpcs/embed:
+    post:
+      tags: [image]
+      summary: Embed a secret file into a cover image (BPCS)
+      requestBody:
+        $ref: "#/components/requestBodies/EmbedForm"
+      responses:
+        "200": { $ref: "#/components/responses/EmbedSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /image/bpcs/extract:
+    post:
+      tags: [image]
+      summary: Extract a secret file from a stego image (BPCS)
+      requestBody:
+        $ref: "#/components/requestBodies/ExtractForm"
+      responses:
+        "200": { $ref: "#/components/responses/ExtractSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /image/lsb/embed:
+    post:
+      tags: [image]
+      summary: Embed a secret file into a cover image (LSB)
+      description: Any image format is accepted; the cover is converted to BMP and the stego output is a lossless BMP.
+      requestBody:
+        $ref: "#/components/requestBodies/EmbedForm"
+      responses:
+        "200": { $ref: "#/components/responses/EmbedSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /image/lsb/extract:
+    post:
+      tags: [image]
+      summary: Extract a secret file from a stego image (LSB)
+      description: Upload the BMP (or lossless PNG) produced by the embed step.
+      requestBody:
+        $ref: "#/components/requestBodies/ExtractForm"
+      responses:
+        "200": { $ref: "#/components/responses/ExtractSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /audio/lsb/embed:
+    post:
+      tags: [audio]
+      summary: Embed a secret file into a WAV cover (LSB)
+      description: Cover must be a PCM WAV file. Output is a WAV file.
+      requestBody:
+        $ref: "#/components/requestBodies/EmbedForm"
+      responses:
+        "200": { $ref: "#/components/responses/EmbedSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /audio/lsb/extract:
+    post:
+      tags: [audio]
+      summary: Extract a secret file from a stego WAV (LSB)
+      requestBody:
+        $ref: "#/components/requestBodies/ExtractForm"
+      responses:
+        "200": { $ref: "#/components/responses/ExtractSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /video/lsb/embed:
+    post:
+      tags: [video]
+      summary: Embed a secret file into a video cover (LSB)
+      description: Cover may be any format OpenCV can read. Output is a lossless FFV1/AVI file.
+      requestBody:
+        $ref: "#/components/requestBodies/EmbedForm"
+      responses:
+        "200": { $ref: "#/components/responses/EmbedSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /video/lsb/extract:
+    post:
+      tags: [video]
+      summary: Extract a secret file from a stego video (LSB)
+      description: Upload the FFV1/AVI file produced by the embed step.
+      requestBody:
+        $ref: "#/components/requestBodies/ExtractForm"
+      responses:
+        "200": { $ref: "#/components/responses/ExtractSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /results/{fileId}:
+    get:
+      tags: [download]
+      summary: Download a produced stego file
+      description: Returns the stego artifact created by an embed call (BMP, WAV or AVI bytes).
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: Stego file bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: File not found.
+          content:
+            text/plain: { schema: { type: string } }
+
+  /extracts/{fileId}:
+    get:
+      tags: [download]
+      summary: Download a recovered secret file
+      description: Returns the secret recovered by an extract call.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: Recovered secret bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: File not found.
+          content:
+            text/plain: { schema: { type: string } }
+
+components:
+  parameters:
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      description: The request id returned in an embed/extract `data.result` path.
+      schema: { type: string, format: uuid }
+
+  requestBodies:
+    EmbedForm:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [cover, secret]
+            properties:
+              cover:
+                type: string
+                format: binary
+                description: The cover media file.
+              secret:
+                type: string
+                format: binary
+                description: The secret file to hide.
+              encrypt:
+                type: string
+                enum: ["true", "false"]
+                description: Vigenère-encrypt the payload with `password`.
+              randomize:
+                type: string
+                enum: ["true", "false"]
+                description: Randomize carrier positions using `password`.
+              password:
+                type: string
+                description: Key for encryption/randomization.
+
+    ExtractForm:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [stego]
+            properties:
+              stego:
+                type: string
+                format: binary
+                description: The stego media file produced by an embed call.
+              encrypt:
+                type: string
+                enum: ["true", "false"]
+              randomize:
+                type: string
+                enum: ["true", "false"]
+              password:
+                type: string
+
+  responses:
+    EmbedSuccess:
+      description: Secret embedded.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Envelope"
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      result:
+                        type: string
+                        description: Path to download the stego file.
+                        example: /results/3e10a8d4-dcd9-42bc-b00c-b5b2c9832208
+                      originalFilename: { type: string }
+                      psnr:
+                        type: string
+                        description: Peak signal-to-noise ratio of the stego artifact.
+                      format:
+                        type: string
+                        description: Output container/codec (video only).
+                        example: FFV1/AVI
+
+    ExtractSuccess:
+      description: Secret extracted.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Envelope"
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      result:
+                        type: string
+                        description: Path to download the recovered secret.
+                        example: /extracts/18f68082-33e1-477c-8672-2c768b4a6f31
+                      originalFilename:
+                        type: string
+                        description: Original name of the recovered secret file.
+
+    Error:
+      description: Bad request (validation, capacity, or corrupt/wrong-password data).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        message: { type: string }
+        data: { type: object }

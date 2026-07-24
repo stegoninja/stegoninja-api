@@ -56,7 +56,6 @@ RUN g++ -std=c++20 -Iinclude -o stegoninja webserver.cpp web/*.cpp \
     $(pkg-config --libs opencv4)
 
 # Application setup.
-COPY index.html .
 RUN mkdir -p uploads results secrets extracts
 
 # Expose port and run.
