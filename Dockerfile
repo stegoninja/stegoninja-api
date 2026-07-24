@@ -44,11 +44,11 @@ RUN git clone --branch 0.19.0 --depth 1 https://github.com/etr/libhttpserver.git
     ldconfig
 
 # Compile the application.
-# The web headers live in include-web/ locally but the sources include them as
-# "include/..." / "../include/...", so they are copied into include/ here.
+# Headers live in include/ and are referenced as "include/..." (from
+# webserver.cpp) and "../include/..." (from web/*.cpp).
 WORKDIR /app
 COPY webserver.cpp .
-COPY include-web/ include/
+COPY include/ include/
 COPY web/ web/
 RUN g++ -std=c++20 -Iinclude -o stegoninja webserver.cpp web/*.cpp \
     $(pkg-config --cflags opencv4) \
