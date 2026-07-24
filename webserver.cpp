@@ -11,8 +11,86 @@
 #include "include/BMPstruct.h"
 #include "include/imgBPCSEmbed.h"
 #include "include/imgBPCSExtract.h"
+#include "include/imgLSB.h"
+#include "include/audioLSB.h"
+#include "include/videoLSB.h"
 
 using namespace httpserver;
+
+// ---------------------------------------------------------------------------
+// Shared helpers for the multipart-based endpoints.
+// ---------------------------------------------------------------------------
+static std::shared_ptr<http_response> jsonResp(const std::string &body,
+                                               int code) {
+    return std::make_shared<string_response>(body, code, "application/json");
+}
+
+static std::string errorJson(const std::string &msg) {
+    return "{\"status\":\"error\",\"message\":\"" + msg + "\",\"data\":{}}";
+}
+
+// Common request context: request id, multipart boundary, body and the
+// encrypt/randomize/password form fields.
+struct MultipartCtx {
+    std::string uuid;
+    std::string boundary;
+    std::string body;
+    std::string password;
+    bool encrypt = false;
+    bool randomize = false;
+    bool ok = false;
+    std::shared_ptr<http_response> error;
+};
+
+static MultipartCtx prepareRequest(const http_request &req) {
+    MultipartCtx c;
+
+    uuid_t uuid;
+    char uuid_str[37];
+    uuid_generate_random(uuid);
+    uuid_unparse(uuid, uuid_str);
+    c.uuid = uuid_str;
+
+    std::string content_type(req.get_header("Content-Type"));
+    if (content_type.find("multipart/form-data") == std::string::npos) {
+        c.error = jsonResp(errorJson("Invalid content type"), 400);
+        return c;
+    }
+    size_t boundary_pos = content_type.find("boundary=");
+    if (boundary_pos == std::string::npos) {
+        c.error = jsonResp(errorJson("Missing multipart boundary"), 400);
+        return c;
+    }
+    c.boundary = content_type.substr(boundary_pos + 9);
+    c.body = std::string(req.get_content());
+    c.password = std::string(req.get_arg_flat("password"));
+    c.encrypt = std::string(req.get_arg_flat("encrypt")) == "true";
+    c.randomize = std::string(req.get_arg_flat("randomize")) == "true";
+    c.ok = true;
+    return c;
+}
+
+// Extract a named file part and persist it to destPath. On failure `err` is set
+// with an appropriate JSON response and false is returned.
+static bool saveNamedFile(const std::string &body, const std::string &boundary,
+                          const std::string &name, const std::string &destPath,
+                          std::string &outFilename,
+                          std::shared_ptr<http_response> &err) {
+    auto file = get_file_by_name(body, boundary, name);
+    if (!file.has_value() || file->first.empty() || file->second.empty()) {
+        err = jsonResp(errorJson("Missing or empty file part: " + name), 400);
+        return false;
+    }
+    std::ofstream fs(destPath, std::ios::binary);
+    if (!fs.is_open()) {
+        err = jsonResp(errorJson("Failed to save uploaded file: " + name), 400);
+        return false;
+    }
+    fs << file->second;
+    fs.close();
+    outFilename = file->first;
+    return true;
+}
 
 class IndexFileHandler : public http_resource {
 public:
@@ -150,21 +228,169 @@ class ImageBPCSExtractHandler : public http_resource {
         }
 };
 
+// ---------------------------------------------------------------------------
+// Image LSB
+// ---------------------------------------------------------------------------
+class ImageLSBEmbedHandler : public http_resource {
+public:
+    std::shared_ptr<http_response> render_POST(const http_request &req) override {
+        MultipartCtx c = prepareRequest(req);
+        if (!c.ok) return c.error;
+
+        std::shared_ptr<http_response> err;
+        std::string coverName, secretName;
+        if (!saveNamedFile(c.body, c.boundary, "cover",
+                           "/app/uploads/" + c.uuid, coverName, err))
+            return err;
+        if (!saveNamedFile(c.body, c.boundary, "secret",
+                           "/app/secrets/" + c.uuid, secretName, err))
+            return err;
+
+        std::string coverBmp = "/app/uploads/" + c.uuid + "_cover.bmp";
+        if (!convertToBMP(("/app/uploads/" + c.uuid).c_str(), coverBmp.c_str()))
+            return jsonResp(errorJson("Failed to convert cover image to BMP"), 400);
+
+        auto [message, code] = imgLSBEmbed(c.uuid, coverName, secretName,
+                                           c.password, c.encrypt, c.randomize);
+        return jsonResp(message, code);
+    }
+};
+
+class ImageLSBExtractHandler : public http_resource {
+public:
+    std::shared_ptr<http_response> render_POST(const http_request &req) override {
+        MultipartCtx c = prepareRequest(req);
+        if (!c.ok) return c.error;
+
+        std::shared_ptr<http_response> err;
+        std::string stegoName;
+        if (!saveNamedFile(c.body, c.boundary, "stego",
+                           "/app/uploads/" + c.uuid, stegoName, err))
+            return err;
+
+        std::string stegoBmp = "/app/uploads/" + c.uuid + "_stego.bmp";
+        if (!convertToBMP(("/app/uploads/" + c.uuid).c_str(), stegoBmp.c_str()))
+            return jsonResp(errorJson("Failed to convert stego image to BMP"), 400);
+
+        auto [message, code] =
+            imgLSBExtract(c.uuid, c.password, c.encrypt, c.randomize);
+        return jsonResp(message, code);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Audio LSB
+// ---------------------------------------------------------------------------
+class AudioLSBEmbedHandler : public http_resource {
+public:
+    std::shared_ptr<http_response> render_POST(const http_request &req) override {
+        MultipartCtx c = prepareRequest(req);
+        if (!c.ok) return c.error;
+
+        std::shared_ptr<http_response> err;
+        std::string coverName, secretName;
+        if (!saveNamedFile(c.body, c.boundary, "cover",
+                           "/app/uploads/" + c.uuid, coverName, err))
+            return err;
+        if (!saveNamedFile(c.body, c.boundary, "secret",
+                           "/app/secrets/" + c.uuid, secretName, err))
+            return err;
+
+        auto [message, code] = audioLSBEmbed(c.uuid, coverName, secretName,
+                                             c.password, c.encrypt, c.randomize);
+        return jsonResp(message, code);
+    }
+};
+
+class AudioLSBExtractHandler : public http_resource {
+public:
+    std::shared_ptr<http_response> render_POST(const http_request &req) override {
+        MultipartCtx c = prepareRequest(req);
+        if (!c.ok) return c.error;
+
+        std::shared_ptr<http_response> err;
+        std::string stegoName;
+        if (!saveNamedFile(c.body, c.boundary, "stego",
+                           "/app/uploads/" + c.uuid, stegoName, err))
+            return err;
+
+        auto [message, code] =
+            audioLSBExtract(c.uuid, c.password, c.encrypt, c.randomize);
+        return jsonResp(message, code);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Video LSB
+// ---------------------------------------------------------------------------
+class VideoLSBEmbedHandler : public http_resource {
+public:
+    std::shared_ptr<http_response> render_POST(const http_request &req) override {
+        MultipartCtx c = prepareRequest(req);
+        if (!c.ok) return c.error;
+
+        std::shared_ptr<http_response> err;
+        std::string coverName, secretName;
+        if (!saveNamedFile(c.body, c.boundary, "cover",
+                           "/app/uploads/" + c.uuid, coverName, err))
+            return err;
+        if (!saveNamedFile(c.body, c.boundary, "secret",
+                           "/app/secrets/" + c.uuid, secretName, err))
+            return err;
+
+        auto [message, code] = videoLSBEmbed(c.uuid, coverName, secretName,
+                                             c.password, c.encrypt, c.randomize);
+        return jsonResp(message, code);
+    }
+};
+
+class VideoLSBExtractHandler : public http_resource {
+public:
+    std::shared_ptr<http_response> render_POST(const http_request &req) override {
+        MultipartCtx c = prepareRequest(req);
+        if (!c.ok) return c.error;
+
+        std::shared_ptr<http_response> err;
+        std::string stegoName;
+        // Store with a .avi extension so OpenCV recognises the FFV1 stream.
+        if (!saveNamedFile(c.body, c.boundary, "stego",
+                           "/app/uploads/" + c.uuid + ".avi", stegoName, err))
+            return err;
+
+        auto [message, code] =
+            videoLSBExtract(c.uuid, c.password, c.encrypt, c.randomize);
+        return jsonResp(message, code);
+    }
+};
+
 class ResultHandler : public http_resource {
     public:
         std::shared_ptr<http_response> render_GET(const http_request& req) override {
             std::string fileId(req.get_arg("fileId"));
-            // if (!fileId) {
-            //     return std::make_shared<string_response>("fileId not found", 404, "text/plain");
-            // }
 
             std::ifstream file("results/" + fileId, std::ios::in | std::ios::binary);
             if (!file.is_open()) {
                 return std::make_shared<string_response>("File not found", 404, "text/plain");
             }
-            
+
             std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            return std::make_shared<string_response>(content, 200, "image/bmp");
+            return std::make_shared<string_response>(content, 200, "application/octet-stream");
+        }
+};
+
+// Download an extracted secret file by request id.
+class ExtractHandler : public http_resource {
+    public:
+        std::shared_ptr<http_response> render_GET(const http_request& req) override {
+            std::string fileId(req.get_arg("fileId"));
+
+            std::ifstream file("extracts/" + fileId, std::ios::in | std::ios::binary);
+            if (!file.is_open()) {
+                return std::make_shared<string_response>("File not found", 404, "text/plain");
+            }
+
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            return std::make_shared<string_response>(content, 200, "application/octet-stream");
         }
 };
 
@@ -176,12 +402,26 @@ int main() {
     IndexFileHandler index;
     ImageBPCSEmbedHandler imgBPCSEm;
     ImageBPCSExtractHandler imgBPCSEx;
+    ImageLSBEmbedHandler imgLSBEm;
+    ImageLSBExtractHandler imgLSBEx;
+    AudioLSBEmbedHandler audioLSBEm;
+    AudioLSBExtractHandler audioLSBEx;
+    VideoLSBEmbedHandler videoLSBEm;
+    VideoLSBExtractHandler videoLSBEx;
     ResultHandler results;
+    ExtractHandler extracts;
 
     ws.register_resource("/", &index);
     ws.register_resource("/image/bpcs/embed", &imgBPCSEm);
     ws.register_resource("/image/bpcs/extract", &imgBPCSEx);
+    ws.register_resource("/image/lsb/embed", &imgLSBEm);
+    ws.register_resource("/image/lsb/extract", &imgLSBEx);
+    ws.register_resource("/audio/lsb/embed", &audioLSBEm);
+    ws.register_resource("/audio/lsb/extract", &audioLSBEx);
+    ws.register_resource("/video/lsb/embed", &videoLSBEm);
+    ws.register_resource("/video/lsb/extract", &videoLSBEx);
     ws.register_resource("/results/{fileId}", &results);
+    ws.register_resource("/extracts/{fileId}", &extracts);
 
     std::cout << "Server started on port 8080" << std::endl;
     ws.start(true);
