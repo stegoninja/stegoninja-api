@@ -1,12 +1,11 @@
-# StegoNinja-CPP
+# StegoNinja-API
 
-StegoNinja hides (embeds) and recovers (extracts) a secret file inside a cover
-**image**, **audio**, or **video** file using steganography.
+StegoNinja-API is an HTTP service that hides (embeds) and recovers (extracts) a
+secret file inside a cover **image**, **audio**, or **video** file using
+steganography.
 
-It can be used two ways:
-
-- **Web API** (primary) — a `libhttpserver`-based HTTP service, run via Docker.
-- **CLI / TUI tools** — standalone C++ programs for interactive/offline use.
+The service is **API-only** (JSON responses, no HTML UI). The full contract is
+described in [`openapi.yaml`](./openapi.yaml).
 
 Supported techniques:
 
@@ -16,14 +15,7 @@ Supported techniques:
 | Audio | LSB (over WAV PCM samples) |
 | Video | LSB (over frame pixels, lossless FFV1/AVI output) |
 
----
-
-## Web API
-
-The web service is **API-only** (JSON responses, no HTML UI). The full contract
-is described in [`openapi.yaml`](./openapi.yaml).
-
-### Run it (Docker Compose)
+## Run it (Docker Compose)
 
 ```shell
 docker compose up -d --build                          # host port 8080
@@ -37,7 +29,7 @@ Check it's up:
 curl http://localhost:8080/
 ```
 
-### Endpoints
+## Endpoints
 
 | Method & Path | Purpose |
 |---------------|---------|
@@ -49,7 +41,7 @@ curl http://localhost:8080/
 | `GET  /results/{fileId}` | Download a produced stego file |
 | `GET  /extracts/{fileId}` | Download a recovered secret file |
 
-### Request contract
+## Request contract
 
 Embed and extract requests are `multipart/form-data`:
 
@@ -69,7 +61,7 @@ Responses are JSON: `{ "status": ..., "message": ..., "data": { ... } }`. Embed
 responses include `data.result` (the download path) and `data.psnr`; extract
 responses include `data.result` and `data.originalFilename`.
 
-### Example round-trip (image LSB)
+## Example round-trip (image LSB)
 
 ```shell
 BASE=http://localhost:8080
@@ -95,48 +87,16 @@ to **both** the embed and extract calls.
 
 See [`openapi.yaml`](./openapi.yaml) for the complete reference.
 
----
-
-## CLI / TUI tools
-
-These build separately from the web server.
-
-### CMake targets (image LSB TUI + video)
-
-From the repository root:
-
-```shell
-cmake -S . -B build && cmake --build build
-```
-
-Produces two executables:
-
-- `SteganoImgLsb` — image LSB TUI (`src/main.cpp`, `src/stegano.cpp`, `src/vigenere.cpp`)
-- `SteganoVid` — video LSB (`src/video.cpp`)
-
-Requires OpenCV, ncurses/Curses, and pthreads.
-
-### Standalone tools (not in CMake)
-
-Compile directly with g++:
-
-```shell
-g++ -std=c++17 src/audio.cpp          -o audio
-g++ -std=c++17 src/imgBPCSEmbed.cpp   -o imgBPCSEmbed
-g++ -std=c++17 src/imgBPCSExtract.cpp -o imgBPCSExtract
-```
-
-Prebuilt versions of these are also available in `bin/`
-(`audio`, `imgBPCSEmbed`, `imgBPCSExtract`).
-
----
-
 ## Repository layout
 
 | Path | Role |
 |------|------|
-| `webserver.cpp`, `web/`, `include/` | Web API server and its implementation |
-| `src/` | CLI / TUI tools |
+| `webserver.cpp` | HTTP routing and request handlers |
+| `web/` | Steganography implementations (per medium) |
+| `include/` | Headers (incl. bundled `stb_image`) |
 | `openapi.yaml` | API specification (OpenAPI 3.0) |
 | `compose.yml`, `Dockerfile` | Container build & deployment |
-| `bin/` | Prebuilt standalone CLI binaries |
+
+The image is a single-stage build on Ubuntu 22.04: it compiles `libhttpserver`
+(pinned to 0.19.0) from source and links OpenCV for the video endpoint. See the
+`Dockerfile` for the exact build.
