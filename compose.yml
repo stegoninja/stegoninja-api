@@ -2,3 +2,9 @@ services:
   stegoninja:
     build:
       context: .
+    image: stegoninja:latest
+    container_name: stegoninja
+    ports:
+      # Host port is overridable via STEGO_HOST_PORT (defaults to 8080).
+      - "${STEGO_HOST_PORT:-8080}:8080"
+    restart: unless-stopped
